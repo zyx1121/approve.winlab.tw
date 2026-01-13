@@ -43,9 +43,9 @@ export default function Home() {
 
   const loadUser = async () => {
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    setUser(user);
+      data: { session },
+    } = await supabase.auth.getSession();
+    setUser(session?.user || null);
   };
 
   const downloadSignedPDF = async (doc: DocumentWithSigners) => {
@@ -152,9 +152,10 @@ export default function Home() {
 
         // Get user folder from file_url
         const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user) {
+          const user = session.user;
           const filePath = `${user.id}/${decodeURIComponent(fileName)}`;
           console.log("Deleting file:", filePath);
 
@@ -193,12 +194,14 @@ export default function Home() {
   const loadDocuments = async () => {
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) {
         setLoading(false);
         return;
       }
+
+      const user = session.user;
 
       // Get all documents accessible to user (via RLS policies)
       const { data: documents, error: docsError } = await supabase

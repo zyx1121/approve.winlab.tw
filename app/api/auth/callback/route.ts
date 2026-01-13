@@ -5,11 +5,13 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  const next = requestUrl.searchParams.get("next") || "/";
 
   if (code) {
     const supabase = await createClient();
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  return NextResponse.redirect(`${origin}/`);
+  // Redirect to the 'next' URL if provided, otherwise go to home
+  return NextResponse.redirect(`${origin}${next}`);
 }

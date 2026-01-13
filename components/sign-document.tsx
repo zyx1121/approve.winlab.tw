@@ -35,6 +35,7 @@ export function SignDocument({ documentId }: SignDocumentProps) {
   const [signatureBoxes, setSignatureBoxes] = useState<SignatureBox[]>([]);
   const [userEmail, setUserEmail] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [needsLogin, setNeedsLogin] = useState(false);
 
   // PDF viewer state
   const [numPages, setNumPages] = useState<number>(0);
@@ -51,6 +52,19 @@ export function SignDocument({ documentId }: SignDocumentProps) {
 
   useEffect(() => {
     loadDocument();
+
+    // Listen for auth state changes (e.g., after login)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state changed:", event, !!session);
+      if (event === "SIGNED_IN" && session) {
+        console.log("User signed in, reloading document...");
+        loadDocument();
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [documentId]);
 
   // Reset page loaded state when page number changes
@@ -64,18 +78,26 @@ export function SignDocument({ documentId }: SignDocumentProps) {
       console.log("Document ID:", documentId);
 
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      console.log("User authenticated:", user?.id, user?.email);
+      console.log("Session found:", !!session);
+      console.log(
+        "User authenticated:",
+        session?.user?.id,
+        session?.user?.email
+      );
 
-      if (!user) {
-        console.error("No user found - redirecting to home");
-        router.push("/");
+      if (!session?.user) {
+        console.log("No session found - showing login prompt");
+        setNeedsLogin(true);
+        setLoading(false);
         return;
       }
 
+      const user = session.user;
       setUserEmail(user.email || "");
+      setNeedsLogin(false);
 
       // Load document - use separate queries to avoid nested RLS issues
       console.log("Fetching document from database...");
@@ -292,9 +314,11 @@ export function SignDocument({ documentId }: SignDocumentProps) {
     setIsSaving(true);
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("請先登入");
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error("請先登入");
+
+      const user = session.user;
 
       // Save signature to user_signatures if it's a new signature (not using saved one)
       if (!useSavedSignature || !savedSignature) {
@@ -337,10 +361,42 @@ export function SignDocument({ documentId }: SignDocumentProps) {
     }
   };
 
+  const handleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "keycloak",
+      options: {
+        redirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(window.location.pathname)}`,
+        scopes: "openid",
+      },
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Show login prompt if user is not authenticated
+  if (needsLogin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold">需要登入才能簽署文件</h2>
+          <p className="text-muted-foreground">
+            您收到了一份需要簽署的文件，請先登入以繼續。
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 items-center">
+          <Button onClick={handleLogin} size="lg" className="gap-2">
+            使用 Keycloak 登入
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            登入後即可查看並簽署文件
+          </p>
+        </div>
       </div>
     );
   }

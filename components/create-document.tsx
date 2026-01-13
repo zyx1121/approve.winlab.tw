@@ -109,9 +109,10 @@ export function CreateDocument() {
           console.error("Error loading users:", error);
           // Fallback: try to get current user at least
           const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (user) {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session?.user) {
+            const user = session.user;
             setUsers([
               {
                 id: user.id,
@@ -339,9 +340,11 @@ export function CreateDocument() {
     setIsSaving(true);
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("請先登入");
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error("請先登入");
+
+      const user = session.user;
 
       // Upload PDF to Supabase Storage
       // Sanitize filename: remove special characters and use only alphanumeric, dash, underscore
@@ -417,16 +420,25 @@ export function CreateDocument() {
       const uniqueEmails = [...new Set(signatureBoxes.map((box) => box.email))];
       const signersData = await Promise.all(
         uniqueEmails.map(async (email) => {
-          // Try to find user by email
-          const { data: userData } = await supabase
-            .from("auth.users")
+          // Find user by email from user_profiles (not auth.users)
+          const { data: userData, error: userError } = await supabase
+            .from("user_profiles")
             .select("id")
             .eq("email", email)
-            .single();
+            .maybeSingle();
+
+          if (userError) {
+            console.error(`Error finding user for ${email}:`, userError);
+          }
+
+          if (!userData) {
+            console.error(`User not found for email: ${email}`);
+            throw new Error(`找不到用戶：${email}。請確保該用戶已註冊。`);
+          }
 
           return {
             document_id: document.id,
-            signer_id: userData?.id || user.id, // Fallback to creator if user not found
+            signer_id: userData.id,
             signer_email: email,
             status: "pending",
           };
