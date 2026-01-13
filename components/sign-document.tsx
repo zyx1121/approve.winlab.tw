@@ -13,9 +13,8 @@ import {
   Save,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { PDFDocument } from "pdf-lib";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -42,6 +41,7 @@ export function SignDocument({ documentId }: SignDocumentProps) {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [pageLoaded, setPageLoaded] = useState<boolean>(false);
 
   // Signature state
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
@@ -53,11 +53,18 @@ export function SignDocument({ documentId }: SignDocumentProps) {
     loadDocument();
   }, [documentId]);
 
+  // Reset page loaded state when page number changes
+  useEffect(() => {
+    setPageLoaded(false);
+  }, [pageNumber]);
+
   const loadDocument = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
-        router.push('/');
+        router.push("/");
         return;
       }
 
@@ -65,13 +72,15 @@ export function SignDocument({ documentId }: SignDocumentProps) {
 
       // Load document with signature boxes
       const { data: doc, error: docError } = await supabase
-        .from('documents')
-        .select(`
+        .from("documents")
+        .select(
+          `
           *,
           document_signers(*),
           signature_boxes(*)
-        `)
-        .eq('id', documentId)
+        `
+        )
+        .eq("id", documentId)
         .single();
 
       if (docError) throw docError;
@@ -82,19 +91,20 @@ export function SignDocument({ documentId }: SignDocumentProps) {
       );
 
       if (!userSigner) {
-        alert('您沒有權限簽署此文件');
-        router.push('/');
+        alert("您沒有權限簽署此文件");
+        router.push("/");
         return;
       }
 
-      if (userSigner.status === 'signed') {
-        alert('您已經簽署過此文件');
-        router.push('/');
+      if (userSigner.status === "signed") {
+        alert("您已經簽署過此文件");
+        router.push("/");
         return;
       }
 
-      console.log('Document loaded:', doc);
-      console.log('File URL:', doc.file_url);
+      console.log("Document loaded:", doc);
+      console.log("File URL:", doc.file_url);
+      console.log("All signature boxes:", doc.signature_boxes);
 
       setDocument(doc as any);
 
@@ -102,30 +112,52 @@ export function SignDocument({ documentId }: SignDocumentProps) {
       const userBoxes = doc.signature_boxes.filter(
         (box: any) => box.signer_email === user.email
       );
-      console.log('User signature boxes:', userBoxes);
-      setSignatureBoxes(userBoxes);
+      console.log("User signature boxes:", userBoxes);
+      console.log("User email:", user.email);
+
+      // Validate signature boxes
+      const validBoxes = userBoxes.filter((box: any) => {
+        if (
+          !box ||
+          box.x == null ||
+          box.y == null ||
+          box.width == null ||
+          box.aspect_ratio == null
+        ) {
+          console.error("Invalid signature box found:", box);
+          return false;
+        }
+        return true;
+      });
+
+      if (validBoxes.length !== userBoxes.length) {
+        console.warn(
+          `Filtered out ${userBoxes.length - validBoxes.length} invalid boxes`
+        );
+      }
+
+      setSignatureBoxes(validBoxes);
 
       // Load saved signature
       const { data: savedSig, error: sigError } = await supabase
-        .from('user_signatures')
-        .select('signature_data')
-        .eq('user_id', user.id)
-        .single();
+        .from("user_signatures")
+        .select("signature_data")
+        .eq("user_id", user.id)
+        .maybeSingle(); // Use maybeSingle() instead of single() - returns null if no row found
 
       if (savedSig && !sigError) {
-        console.log('Loaded saved signature');
+        console.log("Loaded saved signature");
         setSavedSignature(savedSig.signature_data);
         setSignatureImage(savedSig.signature_data);
         setUseSavedSignature(true);
       } else {
-        console.log('No saved signature found');
+        console.log("No saved signature found (first time user)");
         setUseSavedSignature(false);
       }
-
     } catch (error) {
-      console.error('Error loading document:', error);
-      alert('載入文件失敗');
-      router.push('/');
+      console.error("Error loading document:", error);
+      alert("載入文件失敗");
+      router.push("/");
     } finally {
       setLoading(false);
     }
@@ -143,23 +175,26 @@ export function SignDocument({ documentId }: SignDocumentProps) {
     return () => window.removeEventListener("resize", updateWidth);
   }, []);
 
-  const pageWidth = containerWidth > 0 ? containerWidth * (zoomLevel / 100) : undefined;
+  const pageWidth =
+    containerWidth > 0 ? containerWidth * (zoomLevel / 100) : undefined;
 
   const handleSave = async () => {
     if (!signatureImage) {
-      alert('請先簽名');
+      alert("請先簽名");
       return;
     }
 
     setIsSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('請先登入');
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("請先登入");
 
       // Save signature to user_signatures if it's a new signature (not using saved one)
       if (!useSavedSignature || !savedSignature) {
         const { error: sigError } = await supabase
-          .from('user_signatures')
+          .from("user_signatures")
           .upsert({
             user_id: user.id,
             signature_data: signatureImage,
@@ -167,30 +202,30 @@ export function SignDocument({ documentId }: SignDocumentProps) {
           });
 
         if (sigError) {
-          console.warn('Failed to save signature for reuse:', sigError);
+          console.warn("Failed to save signature for reuse:", sigError);
           // Don't fail the whole operation if saving signature fails
         } else {
-          console.log('Signature saved for future use');
+          console.log("Signature saved for future use");
         }
       }
 
       // Update document_signers record
       const { error: updateError } = await supabase
-        .from('document_signers')
+        .from("document_signers")
         .update({
           signature_data: signatureImage,
           signed_at: new Date().toISOString(),
-          status: 'signed',
+          status: "signed",
         })
-        .eq('document_id', documentId)
-        .eq('signer_id', user.id);
+        .eq("document_id", documentId)
+        .eq("signer_id", user.id);
 
       if (updateError) throw updateError;
 
-      alert('簽名完成！');
-      router.push('/');
+      alert("簽名完成！");
+      router.push("/");
     } catch (error: any) {
-      console.error('Error saving signature:', error);
+      console.error("Error saving signature:", error);
       alert(`儲存失敗：${error.message}`);
     } finally {
       setIsSaving(false);
@@ -209,7 +244,9 @@ export function SignDocument({ documentId }: SignDocumentProps) {
     return null;
   }
 
-  const currentPageBoxes = signatureBoxes.filter((box) => box.page === pageNumber);
+  const currentPageBoxes = signatureBoxes.filter(
+    (box) => box.page === pageNumber
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -220,7 +257,11 @@ export function SignDocument({ documentId }: SignDocumentProps) {
           <p className="text-muted-foreground">請在指定位置簽名</p>
         </div>
         <Button onClick={handleSave} disabled={isSaving || !signatureImage}>
-          {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+          {isSaving ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Save className="size-4" />
+          )}
           儲存簽名
         </Button>
       </div>
@@ -242,7 +283,9 @@ export function SignDocument({ documentId }: SignDocumentProps) {
           <Button
             variant="outline"
             size="icon-sm"
-            onClick={() => setPageNumber((prev) => Math.min(prev + 1, numPages))}
+            onClick={() =>
+              setPageNumber((prev) => Math.min(prev + 1, numPages))
+            }
             disabled={pageNumber >= numPages}
           >
             <ChevronRight className="size-4" />
@@ -302,39 +345,60 @@ export function SignDocument({ documentId }: SignDocumentProps) {
               renderTextLayer={true}
               renderAnnotationLayer={true}
               className="shadow-2xl"
+              onLoadSuccess={() => {
+                console.log(`Page ${pageNumber} loaded successfully`);
+                setPageLoaded(true);
+              }}
+              onLoadError={(error) => {
+                console.error(`Error loading page ${pageNumber}:`, error);
+                setPageLoaded(false);
+              }}
             />
 
-            {/* Signature Boxes Overlay */}
-            {currentPageBoxes.map((box) => {
-              const heightPercent = box.width / box.aspect_ratio;
-              return (
-                <div
-                  key={box.id}
-                  className="absolute border-2 border-dashed border-primary rounded-md bg-primary/10 z-50"
-                  style={{
-                    left: `${box.x - box.width / 2}%`,
-                    top: `${box.y - heightPercent / 2}%`,
-                    width: `${box.width}%`,
-                    height: `${heightPercent}%`,
-                  }}
-                >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {signatureImage ? (
-                      <img
-                        src={signatureImage}
-                        alt="Signature"
-                        className="max-w-full max-h-full object-contain pointer-events-none"
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="text-primary/60 text-xs text-center">
-                        請在下方簽名區簽名
-                      </div>
-                    )}
+            {/* Signature Boxes Overlay - only render when page is loaded */}
+            {pageLoaded &&
+              currentPageBoxes.map((box) => {
+                // Defensive check for null/undefined values
+                if (
+                  !box ||
+                  box.x == null ||
+                  box.y == null ||
+                  box.width == null ||
+                  box.aspect_ratio == null
+                ) {
+                  console.error("Invalid signature box:", box);
+                  return null;
+                }
+
+                const heightPercent = box.width / box.aspect_ratio;
+                return (
+                  <div
+                    key={box.id}
+                    className="absolute border-2 border-dashed border-primary rounded-md bg-primary/10 z-50"
+                    style={{
+                      left: `${box.x - box.width / 2}%`,
+                      top: `${box.y - heightPercent / 2}%`,
+                      width: `${box.width}%`,
+                      height: `${heightPercent}%`,
+                    }}
+                  >
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      {signatureImage ? (
+                        <img
+                          src={signatureImage}
+                          alt="Signature"
+                          className="max-w-full max-h-full object-contain pointer-events-none"
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="text-primary/60 text-xs text-center">
+                          請在下方簽名區簽名
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         </Document>
       </div>
