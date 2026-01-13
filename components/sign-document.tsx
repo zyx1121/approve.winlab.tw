@@ -60,60 +60,140 @@ export function SignDocument({ documentId }: SignDocumentProps) {
 
   const loadDocument = async () => {
     try {
+      console.log("=== Starting document load ===");
+      console.log("Document ID:", documentId);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
+      console.log("User authenticated:", user?.id, user?.email);
+
       if (!user) {
+        console.error("No user found - redirecting to home");
         router.push("/");
         return;
       }
 
       setUserEmail(user.email || "");
 
-      // Load document with signature boxes
+      // Load document - use separate queries to avoid nested RLS issues
+      console.log("Fetching document from database...");
+
+      // 1. Get the document
       const { data: doc, error: docError } = await supabase
         .from("documents")
-        .select(
-          `
-          *,
-          document_signers(*),
-          signature_boxes(*)
-        `
-        )
+        .select("*")
         .eq("id", documentId)
-        .single();
+        .maybeSingle();
 
-      if (docError) throw docError;
+      if (docError) {
+        console.error("❌ Document query error:", {
+          message: docError.message,
+          details: docError.details,
+          hint: docError.hint,
+          code: docError.code,
+        });
+        throw docError;
+      }
+
+      if (!doc) {
+        console.error("❌ Document not found or access denied");
+        console.error("Document ID:", documentId);
+        console.error("User ID:", user.id);
+        throw new Error("找不到文件或您沒有權限查看此文件");
+      }
+
+      console.log("✅ Document found:", doc.title);
+
+      // 2. Get document signers
+      const { data: signers, error: signersError } = await supabase
+        .from("document_signers")
+        .select("*")
+        .eq("document_id", documentId);
+
+      if (signersError) {
+        console.error("❌ Signers query error:", signersError);
+        throw signersError;
+      }
+
+      console.log(`✅ Found ${signers?.length || 0} signers`);
+
+      // 3. Get signature boxes
+      const { data: boxes, error: boxesError } = await supabase
+        .from("signature_boxes")
+        .select("*")
+        .eq("document_id", documentId);
+
+      if (boxesError) {
+        console.error("❌ Signature boxes query error:", boxesError);
+        throw boxesError;
+      }
+
+      console.log(`✅ Found ${boxes?.length || 0} signature boxes`);
+
+      // Combine the data
+      const fullDoc = {
+        ...doc,
+        document_signers: signers || [],
+        signature_boxes: boxes || [],
+      };
+
+      console.log("✅ Document data combined successfully");
 
       // Check if user is a signer
-      const userSigner = doc.document_signers.find(
+      console.log("Checking if user is a signer...");
+      console.log("Document signers:", fullDoc.document_signers);
+
+      const userSigner = fullDoc.document_signers.find(
         (s: any) => s.signer_id === user.id
       );
 
       if (!userSigner) {
+        console.error("❌ User is not a signer for this document");
+        console.error("Current user ID:", user.id);
+        console.error(
+          "Document signers IDs:",
+          fullDoc.document_signers.map((s: any) => s.signer_id)
+        );
         alert("您沒有權限簽署此文件");
         router.push("/");
         return;
       }
 
+      console.log("✅ User is a valid signer:", userSigner);
+
       if (userSigner.status === "signed") {
+        console.warn("⚠️ Document already signed by this user");
         alert("您已經簽署過此文件");
         router.push("/");
         return;
       }
 
-      console.log("Document loaded:", doc);
-      console.log("File URL:", doc.file_url);
-      console.log("All signature boxes:", doc.signature_boxes);
+      console.log("✅ Document loaded successfully:", {
+        id: fullDoc.id,
+        title: fullDoc.title,
+        created_by: fullDoc.created_by,
+        file_url: fullDoc.file_url,
+        signers_count: fullDoc.document_signers.length,
+        boxes_count: fullDoc.signature_boxes.length,
+      });
 
-      setDocument(doc as any);
+      setDocument(fullDoc as any);
 
       // Filter signature boxes for this user
-      const userBoxes = doc.signature_boxes.filter(
+      console.log("Filtering signature boxes for current user...");
+      console.log("User email:", user.email);
+      console.log("All boxes:", fullDoc.signature_boxes);
+
+      const userBoxes = fullDoc.signature_boxes.filter(
         (box: any) => box.signer_email === user.email
       );
-      console.log("User signature boxes:", userBoxes);
-      console.log("User email:", user.email);
+
+      console.log(
+        `Found ${userBoxes.length} signature boxes for user:`,
+        userBoxes
+      );
 
       // Validate signature boxes
       const validBoxes = userBoxes.filter((box: any) => {
@@ -124,7 +204,7 @@ export function SignDocument({ documentId }: SignDocumentProps) {
           box.width == null ||
           box.aspect_ratio == null
         ) {
-          console.error("Invalid signature box found:", box);
+          console.error("❌ Invalid signature box found:", box);
           return false;
         }
         return true;
@@ -132,31 +212,56 @@ export function SignDocument({ documentId }: SignDocumentProps) {
 
       if (validBoxes.length !== userBoxes.length) {
         console.warn(
-          `Filtered out ${userBoxes.length - validBoxes.length} invalid boxes`
+          `⚠️ Filtered out ${userBoxes.length - validBoxes.length} invalid boxes`
         );
       }
 
+      console.log(`✅ Valid signature boxes: ${validBoxes.length}`);
       setSignatureBoxes(validBoxes);
 
       // Load saved signature
+      console.log("Loading saved signature...");
       const { data: savedSig, error: sigError } = await supabase
         .from("user_signatures")
         .select("signature_data")
         .eq("user_id", user.id)
         .maybeSingle(); // Use maybeSingle() instead of single() - returns null if no row found
 
+      if (sigError) {
+        console.warn("⚠️ Error loading saved signature:", sigError);
+      }
+
       if (savedSig && !sigError) {
-        console.log("Loaded saved signature");
+        console.log(
+          "✅ Loaded saved signature (length:",
+          savedSig.signature_data?.length,
+          "chars)"
+        );
         setSavedSignature(savedSig.signature_data);
         setSignatureImage(savedSig.signature_data);
         setUseSavedSignature(true);
       } else {
-        console.log("No saved signature found (first time user)");
+        console.log("ℹ️ No saved signature found (first time user)");
         setUseSavedSignature(false);
       }
-    } catch (error) {
-      console.error("Error loading document:", error);
-      alert("載入文件失敗");
+
+      console.log("=== Document load complete ===");
+    } catch (error: any) {
+      console.error("=== ❌ ERROR LOADING DOCUMENT ===");
+      console.error("Error type:", error?.constructor?.name);
+      console.error("Error message:", error?.message);
+      console.error("Error details:", error?.details);
+      console.error("Error hint:", error?.hint);
+      console.error("Error code:", error?.code);
+      console.error("Full error object:", error);
+      console.error("================================");
+
+      // Show detailed error message to user
+      const errorMessage = error?.message
+        ? `載入文件失敗：${error.message}${error.hint ? `\n提示：${error.hint}` : ""}`
+        : "載入文件失敗：未知錯誤";
+
+      alert(errorMessage);
       router.push("/");
     } finally {
       setLoading(false);
