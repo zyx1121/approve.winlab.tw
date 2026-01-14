@@ -365,7 +365,7 @@ export function SignDocument({ documentId }: SignDocumentProps) {
     await supabase.auth.signInWithOAuth({
       provider: "keycloak",
       options: {
-        redirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(window.location.pathname)}`,
+        redirectTo: `${window.location.origin}/api/auth/callback`,
         scopes: "openid",
       },
     });
