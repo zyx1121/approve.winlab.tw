@@ -16,6 +16,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
@@ -58,7 +59,7 @@ interface TempSignatureBox {
 
 export function CreateDocument() {
   const router = useRouter();
-  const supabase = createClient();
+  const { user, loading: authLoading } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,8 +98,12 @@ export function CreateDocument() {
 
   // Load users on mount
   useEffect(() => {
+    if (authLoading) return;
+
     const loadUsers = async () => {
       try {
+        const supabase = createClient();
+
         // Query user_profiles table for all users
         const { data, error } = await supabase
           .from("user_profiles")
@@ -108,11 +113,7 @@ export function CreateDocument() {
         if (error) {
           console.error("Error loading users:", error);
           // Fallback: try to get current user at least
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          if (session?.user) {
-            const user = session.user;
+          if (user) {
             setUsers([
               {
                 id: user.id,
@@ -137,7 +138,7 @@ export function CreateDocument() {
     };
 
     loadUsers();
-  }, []);
+  }, [authLoading, user]);
 
   useLayoutEffect(() => {
     const updateWidth = () => {
@@ -337,14 +338,14 @@ export function CreateDocument() {
       return;
     }
 
+    if (!user) {
+      alert("請先登入");
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.user) throw new Error("請先登入");
-
-      const user = session.user;
+      const supabase = createClient();
 
       // Upload PDF to Supabase Storage
       // Sanitize filename: remove special characters and use only alphanumeric, dash, underscore

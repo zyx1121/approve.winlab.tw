@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import type { DocumentWithSigners } from "@/lib/types";
 import {
@@ -32,26 +33,21 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
-  const supabase = createClient();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    loadDocuments();
-    loadUser();
-  }, []);
-
-  const loadUser = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    setUser(session?.user || null);
-  };
+    // Wait for auth to be ready before loading documents
+    if (!authLoading) {
+      loadDocuments();
+    }
+  }, [authLoading, user]);
 
   const downloadSignedPDF = async (doc: DocumentWithSigners) => {
     setDownloadingDocId(doc.id);
     try {
       console.log("Downloading document:", doc);
+      const supabase = createClient();
 
       // Fetch the original PDF
       const pdfResponse = await fetch(doc.file_url);
@@ -143,30 +139,24 @@ export default function Home() {
     setDeletingDocId(doc.id);
     try {
       console.log("Deleting document:", doc);
+      const supabase = createClient();
 
       // Delete from storage
-      if (doc.file_url) {
+      if (doc.file_url && user) {
         // Extract file path from URL
         const urlParts = doc.file_url.split("/");
         const fileName = urlParts[urlParts.length - 1].split("?")[0];
 
-        // Get user folder from file_url
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session?.user) {
-          const user = session.user;
-          const filePath = `${user.id}/${decodeURIComponent(fileName)}`;
-          console.log("Deleting file:", filePath);
+        const filePath = `${user.id}/${decodeURIComponent(fileName)}`;
+        console.log("Deleting file:", filePath);
 
-          const { error: storageError } = await supabase.storage
-            .from("documents")
-            .remove([filePath]);
+        const { error: storageError } = await supabase.storage
+          .from("documents")
+          .remove([filePath]);
 
-          if (storageError) {
-            console.warn("Failed to delete file from storage:", storageError);
-            // Don't fail the whole operation if file deletion fails
-          }
+        if (storageError) {
+          console.warn("Failed to delete file from storage:", storageError);
+          // Don't fail the whole operation if file deletion fails
         }
       }
 
@@ -193,15 +183,12 @@ export default function Home() {
 
   const loadDocuments = async () => {
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.user) {
+      if (!user) {
         setLoading(false);
         return;
       }
 
-      const user = session.user;
+      const supabase = createClient();
 
       // Get all documents accessible to user (via RLS policies)
       const { data: documents, error: docsError } = await supabase
@@ -312,20 +299,20 @@ export default function Home() {
     }
   };
 
+  if (authLoading || loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <FileText className="size-12 text-muted-foreground" />
         <h2 className="text-xl font-semibold">請先登入</h2>
         <p className="text-muted-foreground">登入後即可查看您的簽核文件</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }

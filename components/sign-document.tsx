@@ -2,6 +2,7 @@
 
 import { SignaturePad } from "@/components/signature-pad";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import type { DocumentWithSigners, SignatureBox } from "@/lib/types";
 import {
@@ -26,7 +27,7 @@ interface SignDocumentProps {
 
 export function SignDocument({ documentId }: SignDocumentProps) {
   const router = useRouter();
-  const supabase = createClient();
+  const { user, loading: authLoading } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -50,22 +51,9 @@ export function SignDocument({ documentId }: SignDocumentProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [useSavedSignature, setUseSavedSignature] = useState(true);
 
-  useEffect(() => {
-    loadDocument();
-
-    // Listen for auth state changes (e.g., after login)
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event, !!session);
-      if (event === "SIGNED_IN" && session) {
-        console.log("User signed in, reloading document...");
-        loadDocument();
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [documentId]);
+  // Note: We removed the auth state listener here because AuthContext
+  // now manages authentication globally. The useEffect in loadDocument
+  // will handle auth state changes through the authLoading and user dependencies.
 
   // Reset page loaded state when page number changes
   useEffect(() => {
@@ -77,30 +65,27 @@ export function SignDocument({ documentId }: SignDocumentProps) {
       console.log("=== Starting document load ===");
       console.log("Document ID:", documentId);
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      console.log("Session found:", !!session);
+      console.log("User found:", !!user);
       console.log(
         "User authenticated:",
-        session?.user?.id,
-        session?.user?.email
+        user?.id,
+        user?.email
       );
 
-      if (!session?.user) {
-        console.log("No session found - showing login prompt");
+      if (!user) {
+        console.log("No user found - showing login prompt");
         setNeedsLogin(true);
         setLoading(false);
         return;
       }
 
-      const user = session.user;
       setUserEmail(user.email || "");
       setNeedsLogin(false);
 
       // Load document - use separate queries to avoid nested RLS issues
       console.log("Fetching document from database...");
+
+      const supabase = createClient();
 
       // 1. Get the document
       const { data: doc, error: docError } = await supabase
@@ -311,14 +296,14 @@ export function SignDocument({ documentId }: SignDocumentProps) {
       return;
     }
 
+    if (!user) {
+      alert("請先登入");
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.user) throw new Error("請先登入");
-
-      const user = session.user;
+      const supabase = createClient();
 
       // Save signature to user_signatures if it's a new signature (not using saved one)
       if (!useSavedSignature || !savedSignature) {
@@ -362,6 +347,7 @@ export function SignDocument({ documentId }: SignDocumentProps) {
   };
 
   const handleLogin = async () => {
+    const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: "keycloak",
       options: {
@@ -371,7 +357,7 @@ export function SignDocument({ documentId }: SignDocumentProps) {
     });
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="size-8 animate-spin text-primary" />
