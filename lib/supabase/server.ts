@@ -11,10 +11,8 @@ export const createClient = async () => {
     cookies: {
       getAll() {
         const allCookies = cookieStore.getAll();
-        // Filter out potentially corrupted cookies
         return allCookies.filter((cookie) => {
           try {
-            // Validate that the cookie value is valid UTF-8
             if (cookie.value) {
               Buffer.from(cookie.value, "utf-8");
             }
@@ -29,17 +27,10 @@ export const createClient = async () => {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
             try {
-              // Validate cookie value before setting
-              if (value) {
-                Buffer.from(value, "utf-8");
-              }
-
-              // Check cookie size (4KB limit per cookie)
               const cookieSize = new Blob([value]).size;
               if (cookieSize > 3500) {
-                // 3.5KB threshold to be safe
                 console.warn(
-                  `⚠️ Cookie ${name} is too large: ${cookieSize} bytes`
+                  `Cookie ${name} is too large: ${cookieSize} bytes`
                 );
               }
 
@@ -52,17 +43,12 @@ export const createClient = async () => {
                 sameSite: "lax",
                 secure: process.env.NODE_ENV === "production",
               });
-            } catch (encodeError) {
-              console.error(
-                `Failed to validate/set cookie ${name}:`,
-                encodeError
-              );
+            } catch (error) {
+              console.error(`Failed to set cookie ${name}:`, error);
             }
           });
         } catch (error) {
-          // Ignore errors in Server Components - this is expected
-          // Cookies will be properly set in Route Handlers
-          console.error("Error in setAll:", error);
+          console.error("Failed to set cookies:", error);
         }
       },
     },

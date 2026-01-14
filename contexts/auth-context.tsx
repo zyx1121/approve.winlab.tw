@@ -40,8 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const isCookieError = (error: any): boolean => {
+    const message = error?.message || "";
+    return (
+      message.includes("Invalid") ||
+      message.includes("corrupt") ||
+      message.includes("malformed") ||
+      message.includes("UTF-8") ||
+      message.includes("utf-8")
+    );
+  };
+
   useEffect(() => {
-    // Initialize session - only called once on mount
     let mounted = true;
 
     const initializeAuth = async () => {
@@ -54,20 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (error) {
           console.error("Error getting session:", error);
 
-          // Check if it's a rate limit error
           if (error.message.includes("429") || error.message.includes("rate")) {
-            console.warn("⚠️ Rate limit detected - waiting before retry...");
-            // Don't clear cookies immediately on rate limit
+            console.warn("Rate limit detected - waiting before retry");
             return;
           }
 
-          // If it's a corrupted session error, clear cookies
-          if (
-            error.message.includes("Invalid") ||
-            error.message.includes("corrupt") ||
-            error.message.includes("malformed")
-          ) {
-            console.log("🧹 Clearing corrupted cookies...");
+          if (isCookieError(error)) {
+            console.log("Clearing corrupted cookies");
             clearSupabaseCookies();
           }
         }
@@ -77,6 +80,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Failed to initialize auth:", error);
+
+        if (isCookieError(error)) {
+          console.log("Clearing corrupted cookies");
+          clearSupabaseCookies();
+        }
+
         if (mounted) {
           setUser(null);
         }
@@ -89,23 +98,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initializeAuth();
 
-    // Set up auth state change listener
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("🔐 Auth state changed:", event);
+      console.log("Auth state changed:", event);
 
       if (event === "TOKEN_REFRESHED") {
-        console.log("✅ Token refreshed successfully");
+        console.log("Token refreshed successfully");
       }
 
       if (event === "SIGNED_OUT") {
-        console.log("👋 User signed out - clearing cookies");
+        console.log("User signed out - clearing cookies");
         clearSupabaseCookies();
       }
 
       if (event === "SIGNED_IN") {
-        console.log("👋 User signed in");
+        console.log("User signed in");
       }
 
       if (mounted) {

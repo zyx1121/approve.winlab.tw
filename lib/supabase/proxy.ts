@@ -20,12 +20,10 @@ export const createClient = (
     cookies: {
       getAll() {
         const allCookies = request.cookies.getAll();
-        // Filter out potentially corrupted cookies
+
         return allCookies.filter((cookie) => {
           try {
-            // Validate that the cookie value is valid UTF-8
             if (cookie.value) {
-              // Test if it's valid base64 or regular string
               Buffer.from(cookie.value, "utf-8");
             }
             return true;
@@ -36,17 +34,10 @@ export const createClient = (
         });
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
+        cookiesToSet.forEach(({ name, value }) => {
           try {
-            // Validate cookie value before setting
-            if (value) {
-              Buffer.from(value, "utf-8");
-            }
-
-            // Check cookie size (4KB limit per cookie)
             const cookieSize = new Blob([value]).size;
             if (cookieSize > 3500) {
-              // 3.5KB threshold to be safe
               console.warn(
                 `⚠️ Cookie ${name} is too large: ${cookieSize} bytes`
               );
@@ -54,8 +45,8 @@ export const createClient = (
 
             request.cookies.set(name, value);
           } catch (error) {
-            console.error(`Failed to validate cookie ${name}:`, error);
-            return; // Skip this cookie
+            console.error(`Failed to set cookie ${name}:`, error);
+            return;
           }
         });
 
@@ -65,11 +56,6 @@ export const createClient = (
 
         cookiesToSet.forEach(({ name, value, options }) => {
           try {
-            // Validate again before setting in response
-            if (value) {
-              Buffer.from(value, "utf-8");
-            }
-
             supabaseResponse.cookies.set(name, value, {
               ...options,
               domain: ".winlab.tw",
@@ -77,7 +63,7 @@ export const createClient = (
               secure: process.env.NODE_ENV === "production",
             });
           } catch (error) {
-            console.error(`Failed to set cookie ${name} in response:`, error);
+            console.error(`Failed to set cookie ${name}:`, error);
           }
         });
       },
