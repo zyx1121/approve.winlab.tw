@@ -14,7 +14,13 @@ import {
   Save,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -51,9 +57,13 @@ export function SignDocument({ documentId }: SignDocumentProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [useSavedSignature, setUseSavedSignature] = useState(true);
 
-  // Note: We removed the auth state listener here because AuthContext
-  // now manages authentication globally. The useEffect in loadDocument
-  // will handle auth state changes through the authLoading and user dependencies.
+  // Load document when auth is ready
+  useEffect(() => {
+    // Wait for auth to be ready before loading
+    if (!authLoading) {
+      loadDocument();
+    }
+  }, [documentId, authLoading, user]);
 
   // Reset page loaded state when page number changes
   useEffect(() => {
