@@ -32,7 +32,7 @@ export function LogoutButton() {
       className="w-full"
     >
       <LogOut />
-      Logout
+      登出
     </Button>
   );
 }
