@@ -2,6 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { clearSupabaseCookies } from "@/lib/clear-cookies";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
@@ -12,9 +13,26 @@ export function Header() {
   const supabase = createClient();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.error("Error getting session:", error);
+          // If it's a corrupted session error, clear cookies
+          if (
+            error.message.includes("Invalid") ||
+            error.message.includes("corrupt")
+          ) {
+            console.log("Clearing corrupted cookies...");
+            clearSupabaseCookies();
+          }
+        }
+        setUser(session?.user ?? null);
+      })
+      .catch((error) => {
+        console.error("Failed to get session:", error);
+        setUser(null);
+      });
 
     const {
       data: { subscription },
