@@ -15,19 +15,19 @@ export const createClient = async () => {
       setAll(cookiesToSet) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
-            const cookieOptions: any = { ...options };
-
-            if (process.env.NODE_ENV === "production") {
-              cookieOptions.domain = ".winlab.tw";
-            }
-
-            cookieOptions.sameSite = "lax";
-            cookieOptions.secure = process.env.NODE_ENV === "production";
-
-            cookieStore.set(name, value, cookieOptions);
+            cookieStore.set(name, value, {
+              ...options,
+              domain:
+                process.env.NODE_ENV === "production"
+                  ? ".winlab.tw"
+                  : undefined,
+              sameSite: "lax",
+              secure: process.env.NODE_ENV === "production",
+            });
           });
         } catch (error) {
-          console.error("Error setting cookie:", error);
+          // Ignore errors in Server Components - this is expected
+          // Cookies will be properly set in Route Handlers
         }
       },
     },
