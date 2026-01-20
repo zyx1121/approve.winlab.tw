@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
+import { Button } from "./ui/button";
 
 export function Header() {
   const { user } = useAuth();
@@ -51,15 +52,14 @@ export function Header() {
           </Avatar>
         </Link>
       ) : (
-        <button
+        <Button
           onClick={handleLogin}
-          className="cursor-pointer transition-all hover:opacity-80 hover:scale-105 duration-200"
+          className="transition-all hover:scale-105 duration-200"
           aria-label="Login"
+          variant="default"
         >
-          <Avatar>
-            <AvatarFallback>?</AvatarFallback>
-          </Avatar>
-        </button>
+          登入
+        </Button>
       )}
     </header>
   );
