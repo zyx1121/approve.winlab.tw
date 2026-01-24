@@ -1,5 +1,4 @@
 import "@/app/globals.css";
-import { Background } from "@/components/background";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { Separator } from "@/components/ui/separator";
@@ -30,7 +29,7 @@ export default function RootLayout({
           <AuthProvider>
             <div className="relative min-h-dvh">
               <div className="fixed inset-0 -z-10">
-                <Background />
+                {/* <Background /> */}
               </div>
               <div className="relative flex flex-col min-h-dvh">
                 <Header />
